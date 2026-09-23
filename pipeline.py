@@ -19,18 +19,29 @@ def transcribe(audio: Path) -> list[dict]:
     except ImportError as exc:
         raise RuntimeError("Установите mlx-whisper на Mac с Apple Silicon.") from exc
     # language=None enables automatic language detection; no forced translation.
-    result = mlx_whisper.transcribe(str(audio), path_or_hf_repo=model, task="transcribe")
+    result = mlx_whisper.transcribe(
+        str(audio), path_or_hf_repo=model, task="transcribe", word_timestamps=True
+    )
     duration = float(subprocess.check_output([
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", str(audio)
     ], text=True).strip())
-    return [
-        {"start": max(0.0, float(s["start"])),
-         "end": min(duration, float(s["end"])),
-         "speaker": "Не определён", "text": s["text"].strip()}
-        for s in result["segments"]
-        if s["text"].strip() and float(s["start"]) < duration
-    ]
+    segments = []
+    for s in result["segments"]:
+        start = max(0.0, float(s["start"]))
+        if not s["text"].strip() or start >= duration:
+            continue
+        words = [
+            {"start": max(0.0, float(w["start"])),
+             "end": min(duration, float(w["end"])), "word": w["word"]}
+            for w in s.get("words", [])
+            if w["word"].strip() and float(w["start"]) < duration
+        ]
+        segments.append({
+            "start": start, "end": min(duration, float(s["end"])),
+            "speaker": "Не определён", "text": s["text"].strip(), "words": words
+        })
+    return segments
 
 
 def diarize(audio: Path, segments: list[dict]) -> list[dict]:
@@ -56,18 +67,68 @@ def diarize(audio: Path, segments: list[dict]) -> list[dict]:
         annotation = getattr(output, "exclusive_speaker_diarization", output)
         turns = [(turn.start, turn.end, label)
                  for turn, _, label in annotation.itertracks(yield_label=True)]
-    labels = {}
-    for s in segments:
+    return assign_speakers(segments, turns)
+
+
+def assign_speakers(segments: list[dict], turns: list[tuple]) -> list[dict]:
+    """Use word timing to split cross-speaker ASR segments; flag ambiguous words."""
+    turns = sorted(turns)
+    labels = {label: f"Speaker {index + 1}" for index, label in
+              enumerate(dict.fromkeys(label for _, _, label in turns))}
+
+    def label_for(start: float, end: float) -> str | None:
+        length = end - start
+        if length <= 0:
+            return None
         scores = {}
-        for start, end, label in turns:
-            overlap = max(0.0, min(s["end"], end) - max(s["start"], start))
+        for turn_start, turn_end, label in turns:
+            overlap = max(0.0, min(end, turn_end) - max(start, turn_start))
             scores[label] = scores.get(label, 0.0) + overlap
-        if scores and max(scores.values()) > 0:
-            label = max(scores, key=scores.get)
-            if label not in labels:
-                labels[label] = f"Speaker {len(labels) + 1}"
-            s["speaker"] = labels[label]
-    return segments
+        ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+        if not ranked or ranked[0][1] < 0.6 * length:
+            return None
+        if len(ranked) > 1 and ranked[1][1] > 0.2 * length:
+            return None
+        return labels[ranked[0][0]]
+
+    output = []
+    for segment in segments:
+        words = segment.get("words") or []
+        if not words:
+            speaker = label_for(segment["start"], segment["end"])
+            output.append({**segment, "speaker": speaker or "Не определён",
+                           "needs_review": speaker is None})
+            continue
+        for word in words:
+            start, end = word["start"], word["end"]
+            if end <= start:
+                continue
+            speaker = label_for(start, end) or "Не определён"
+            if output and output[-1].get("_source") == id(segment) and output[-1]["speaker"] == speaker:
+                output[-1]["end"] = end
+                output[-1]["text"] += word["word"]
+                output[-1]["words"].append(word)
+            else:
+                output.append({"start": start, "end": end, "speaker": speaker,
+                               "text": word["word"], "words": [word],
+                               "needs_review": speaker == "Не определён",
+                               "_source": id(segment)})
+    # A very short label island at a speaker change is not reliable enough to
+    # override the surrounding turn. Keep the words visible for manual review.
+    for index, item in enumerate(output):
+        if item["speaker"] == "Не определён" or item["end"] - item["start"] >= 1.0:
+            continue
+        following = next((other for other in output[index + 1:]
+                          if other.get("_source") == item.get("_source")
+                          and other["speaker"] != "Не определён"), None)
+        if (following and following["speaker"] != item["speaker"]
+                and following["start"] - item["end"] <= 1.0):
+            item["speaker"] = "Не определён"
+            item["needs_review"] = True
+    for item in output:
+        item["text"] = item["text"].strip()
+        item.pop("_source", None)
+    return [item for item in output if item["text"]]
 
 
 def stamp(seconds: float) -> str:
