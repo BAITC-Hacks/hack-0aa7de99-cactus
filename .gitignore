@@ -4,3 +4,30 @@ smoke/
 __pycache__/
 .DS_Store
 .DS_Store
+
+# Local meeting inputs and generated outputs
+*.mp3
+*.m4a
+*.wav
+*.flac
+*.mp4
+*.docx
+asr.json
+result.json
+timings.json
+*transcript*.json
+uploads/
+results/
+output/
+
+# Local models and credentials
+*.safetensors
+*.gguf
+*.npz
+*.pt
+*.pth
+*.onnx
+.env
+.env.*
+*.pem
+*.key
