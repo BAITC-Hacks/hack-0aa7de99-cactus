@@ -1,7 +1,0 @@
-mlx-whisper>=0.4.3
-mlx-lm>=0.31.3
-pyannote.audio>=4.0.7
-transformers>=5.0
-python-docx
-soundfile
-flask
