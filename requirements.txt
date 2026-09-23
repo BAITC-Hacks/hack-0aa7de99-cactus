@@ -1,0 +1,4 @@
+streamlit>=1.35
+mlx-whisper>=0.4; sys_platform == 'darwin' and platform_machine == 'arm64'
+pyannote.audio>=4.0,<5
+python-docx>=1.1
