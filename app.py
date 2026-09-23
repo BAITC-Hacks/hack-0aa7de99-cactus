@@ -1,42 +1,13 @@
 from __future__ import annotations
 
-import io
 import tempfile
 from pathlib import Path
 
 import streamlit as st
-from docx import Document
+from document_export import make_docx
 
 from pipeline import diarize, extract, lines_from_segments, parse_manual, questions, transcribe
 
-
-def make_docx(lines: list[dict], result: dict, actions: list[dict]) -> bytes:
-    doc = Document()
-    doc.add_heading("Протокол совещания", 0)
-    doc.add_paragraph("Черновик: проверьте ответственных, сроки и исходные реплики перед утверждением.")
-    doc.add_heading("Краткое содержание", 1)
-    doc.add_paragraph(result["summary"])
-    doc.add_heading("Решения", 1)
-    for decision in result["decisions"]:
-        doc.add_paragraph(decision, style="List Bullet")
-    doc.add_heading("Поручения", 1)
-    table = doc.add_table(rows=1, cols=4)
-    table.style = "Table Grid"
-    for cell, title in zip(table.rows[0].cells, ["Задача", "Ответственный", "Срок", "Основание"]):
-        cell.text = title
-    for action in actions:
-        cells = table.add_row().cells
-        for cell, key in zip(cells, ["task", "owner", "deadline", "evidence"]):
-            cell.text = str(action.get(key) or "Не указан")
-    doc.add_heading("Требует уточнения", 1)
-    for issue in questions(actions):
-        doc.add_paragraph(issue, style="List Bullet")
-    doc.add_heading("Транскрипт", 1)
-    for line in lines:
-        doc.add_paragraph(f'{line["time"]} {line["speaker"]}: {line["text"]}')
-    out = io.BytesIO()
-    doc.save(out)
-    return out.getvalue()
 
 
 st.set_page_config(page_title="Meeting Execution Intelligence", layout="wide")
