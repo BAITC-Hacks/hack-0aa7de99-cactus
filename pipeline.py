@@ -213,7 +213,14 @@ def _explicit_actions(lines: list[dict]) -> list[dict]:
             context = lines[max(0, index - 10):index]
             joined = " ".join(x["text"] for x in context)
             matches = list(name.finditer(joined))
-            if matches:
+            # A vocative immediately before the directive overrides names
+            # mentioned as recipients inside the request itself.
+            directive_in_text = re.search(r"\b(?:разберитесь|проверьте|свяжитесь|проводите|запросите)\b", text, re.I)
+            leading = text[:directive_in_text.start()] if directive_in_text else ""
+            leading_names = list(name.finditer(leading))
+            if leading_names:
+                owner = leading_names[-1].group()
+            elif matches:
                 match = matches[-1]
                 owner = match.group()
                 cursor = 0
@@ -222,7 +229,8 @@ def _explicit_actions(lines: list[dict]) -> list[dict]:
                     if cursor < match.end() and end > match.start():
                         ids.add(source["id"])
                     cursor = end + 1
-                notes.append("Исполнитель определён по ближайшему обращению; проверьте связь обращения с поручением.")
+            if owner:
+                notes.append("Исполнитель определён по обращению; проверьте связь обращения с поручением.")
             next_index = anchors[ordinal + 1] if ordinal + 1 < len(anchors) else len(lines)
             follow = lines[index:min(next_index, index + 12)]
             # A report requested after an audit is its deliverable, not a second task.
@@ -319,7 +327,7 @@ def _unstructured_actions(lines: list[dict]) -> list[dict]:
     actions = []
     for group in groups:
         first, last = group[0], group[-1]
-        sources = set(group)
+        sources = set(range(first, last + 1))
         task_text = " ".join(body[i]["text"] for i in range(first, last + 1))
         if first and (re.search(r"\bпредлагаю\b", body[first - 1]["text"], re.I)
                       or re.search(r"предлагаю.*вариант", body[first]["text"], re.I)):
@@ -331,6 +339,10 @@ def _unstructured_actions(lines: list[dict]) -> list[dict]:
         following = body[last + 1:min(len(body), last + 5)]
         for offset, row in enumerate(following, last + 1):
             text = row["text"]
+            if offset == last + 1 and body[last]["text"].rstrip().endswith(","):
+                sources.add(offset)
+                task_text += " " + text
+                continue
             if re.search(r"\b(?:дам|подготовлю|обновлю|найду|организуем)\b", text, re.I):
                 sources.add(offset)
                 task_text += " " + text

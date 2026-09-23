@@ -60,8 +60,11 @@ export VECLIB_MAXIMUM_THREADS=1
 ```
 
 Substitute `Совещание №1.mp3` and `smoke/recording1` for recording #1.
-Each output directory receives `asr.json`, `transcript.json`, `result.json`,
-`protocol.docx` and `timings.json`. These contain meeting information and stay
+Each output directory receives `asr.json`, `source_transcript.json`,
+`transcript.json`, `result.json`, `protocol.docx` and `timings.json`.
+Actions cite intact numbered ASR segments in `source_transcript.json`;
+`transcript.json` keeps the finer diarized speaker turns separately. The DOCX
+contains both views with distinct headings. These contain meeting information and stay
 local. If a run stops after a stage, use `--from-stage diarization`,
 `--from-stage extraction`, or `--from-stage docx` with the same output path to
 resume from saved files. `--stop-after` can end a run at an intermediate stage.
@@ -73,8 +76,19 @@ without repeating speech models:
 .venv/bin/python -u batch_run.py --output smoke/recording2 --from-stage extraction --stop-after extraction
 ```
 
+Check word preservation, evidence citations, and accepted owner/deadline quotes after a run:
+
+```bash
+.venv/bin/python check_results.py smoke/recording1 --expect-actions 10
+.venv/bin/python check_results.py smoke/recording2 --expect-actions 6
+```
+
+The expected action counts above are for the two supplied recordings; the
+checker never uses the reference PDF for extraction. Field-level comparison to
+those PDFs still requires review of the task meaning and uncertain ASR words.
+
 Optional `--review-note "..."` adds an explicit uncertainty for the reviewer;
 it never changes transcript words. A reference protocol must be used for
 comparison only, not fed to extraction. The local Qwen model proposes candidate
-coverage; evidence checks decide which tasks are accepted. Unconfirmed items
+coverage; source-grounded Russian request patterns decide which tasks are accepted. Unconfirmed items
 remain in `review_candidates` in `result.json`.

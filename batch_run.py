@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import time
 from pathlib import Path
 
@@ -21,6 +20,26 @@ def read_json(path: Path):
 
 def write_json(path: Path, value) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def source_lines(asr_segments: list[dict], diar_lines: list[dict]) -> list[dict]:
+    """Keep ASR sentences intact for actions; attach only supported cluster labels."""
+    lines = lines_from_segments(asr_segments)
+    for line in lines:
+        scores = {}
+        for turn in diar_lines:
+            overlap = max(0.0, min(line["end"], turn["end"]) - max(line["start"], turn["start"]))
+            if overlap and turn["speaker"] != "Не определён":
+                scores[turn["speaker"]] = scores.get(turn["speaker"], 0.0) + overlap
+        ranked = sorted(scores.items(), key=lambda pair: pair[1], reverse=True)
+        length = max(0.0, line["end"] - line["start"])
+        if ranked and length and ranked[0][1] >= 0.75 * length and (len(ranked) == 1 or ranked[1][1] <= 0.15 * length):
+            line["speaker"] = ranked[0][0]
+            line["needs_review"] = False
+        else:
+            line["speaker"] = "Не определён"
+            line["needs_review"] = True
+    return lines
 
 
 def main() -> None:
@@ -59,7 +78,10 @@ def main() -> None:
         write_json(timings_path, timings)
         print(f"Diarization {timings['diarization']:.2f}s, {len(lines)} lines", flush=True)
     if start <= 2 <= stop:
-        lines = read_json(args.output / "transcript.json")
+        diar_lines = read_json(args.output / "transcript.json")
+        asr_segments = read_json(args.output / "asr.json")
+        lines = source_lines(asr_segments, diar_lines)
+        write_json(args.output / "source_transcript.json", lines)
         result = extract(lines, review_notes=args.review_note)
         timings.update(result.get("stage_seconds", {}))
         write_json(args.output / "result.json", result)
@@ -68,10 +90,17 @@ def main() -> None:
               f"summary {timings.get('summary_generation', 0):.2f}s, "
               f"{len(result['actions'])} actions", flush=True)
     if start <= 3 <= stop:
-        lines = read_json(args.output / "transcript.json")
+        lines = read_json(args.output / "source_transcript.json")
+        diar_lines = read_json(args.output / "transcript.json")
         result = read_json(args.output / "result.json")
         t = time.perf_counter()
-        data = make_docx(lines, result, result["actions"])
+        title = "Протокол совещания"
+        if args.audio:
+            stem = args.audio.stem
+            title = ("Протокол совещания" + stem[len("Совещание"):]
+                     if stem.casefold().startswith("совещание") else f"Протокол {stem}")
+        data = make_docx(lines, result, result["actions"], title=title,
+                         diarized_lines=diar_lines)
         (args.output / "protocol.docx").write_bytes(data)
         timings["docx_export"] = time.perf_counter() - t
         write_json(timings_path, timings)

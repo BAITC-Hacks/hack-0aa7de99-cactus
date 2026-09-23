@@ -8,7 +8,9 @@ from docx.oxml.ns import qn
 from pipeline import questions, stamp
 
 
-def make_docx(lines: list[dict], result: dict, actions: list[dict]) -> bytes:
+def make_docx(lines: list[dict], result: dict, actions: list[dict],
+              title: str = "Протокол совещания",
+              diarized_lines: list[dict] | None = None) -> bytes:
     if not str(result.get("summary") or "").strip():
         raise ValueError("Нельзя экспортировать протокол без краткого содержания.")
     doc = Document()
@@ -26,7 +28,7 @@ def make_docx(lines: list[dict], result: dict, actions: list[dict]) -> bytes:
         style.font.color.rgb = RGBColor(0, 0, 0)
     doc.styles["Normal"].font.size = Pt(11)
     doc.styles["Normal"].paragraph_format.space_after = Pt(5)
-    doc.add_paragraph("Протокол совещания 1", "Title")
+    doc.add_paragraph(title, "Title")
     doc.add_paragraph("Черновик по записи. Проверьте факты, ответственных, сроки и отмеченные фрагменты по источнику.")
     doc.add_heading("Краткое содержание", 1)
     doc.add_paragraph(result.get("summary", ""))
@@ -75,7 +77,7 @@ def make_docx(lines: list[dict], result: dict, actions: list[dict]) -> bytes:
         for issue in issues:
             doc.add_paragraph(issue, "List Bullet")
     doc.add_page_break()
-    doc.add_heading("Транскрипт", 1)
+    doc.add_heading("ASR транскрипт", 1)
     doc.add_paragraph("Номера строк соответствуют источникам в таблице. Метка «проверить говорящего» означает неопределённую атрибуцию.")
     for line in lines:
         p = doc.add_paragraph()
@@ -85,6 +87,18 @@ def make_docx(lines: list[dict], result: dict, actions: list[dict]) -> bytes:
             label += " — проверить говорящего"
         p.add_run(label + ": ").bold = True
         p.add_run(line["text"])
+    if diarized_lines is not None:
+        doc.add_page_break()
+        doc.add_heading("Диаризация по словам", 1)
+        doc.add_paragraph("Сегменты с неопределённым говорящим явно помечены; поручения ссылаются на номера в ASR транскрипте выше.")
+        for line in diarized_lines:
+            p = doc.add_paragraph()
+            end = stamp(line.get("end", line.get("start", 0)))
+            label = f'[{line["id"]}] {line["time"]}-{end} {line["speaker"]}'
+            if line.get("needs_review"):
+                label += " — проверить говорящего"
+            p.add_run(label + ": ").bold = True
+            p.add_run(line["text"])
     out = io.BytesIO()
     doc.save(out)
     return out.getvalue()
