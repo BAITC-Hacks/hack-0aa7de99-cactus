@@ -11,7 +11,7 @@ recordings in `~/Desktop/tracks/innovations/`; change the paths if needed.
 Use Python 3.12 on macOS with FFmpeg and `ffprobe` available on `PATH`:
 
 ```bash
-cd ~/Downloads/track8
+cd /path/to/hack-0aa7de99-cactus
 python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 mkdir -p models/whisper models/diarization models/ollama-runtime smoke
@@ -32,7 +32,7 @@ The model downloads contain weights only. Start the local Ollama service in its
 own terminal, bound to loopback with cloud access disabled:
 
 ```bash
-cd ~/Downloads/track8
+cd /path/to/hack-0aa7de99-cactus
 OLLAMA_HOST=127.0.0.1:11434 OLLAMA_NO_CLOUD=1 \
 OLLAMA_MODELS="$PWD/models/ollama" models/ollama-runtime/ollama serve
 ```
@@ -40,7 +40,7 @@ OLLAMA_MODELS="$PWD/models/ollama" models/ollama-runtime/ollama serve
 In another terminal, download the extraction model once:
 
 ```bash
-cd ~/Downloads/track8
+cd /path/to/hack-0aa7de99-cactus
 OLLAMA_HOST=127.0.0.1:11434 OLLAMA_MODELS="$PWD/models/ollama" \
 models/ollama-runtime/ollama pull qwen2.5:7b
 ```
@@ -48,7 +48,7 @@ models/ollama-runtime/ollama pull qwen2.5:7b
 ## Run a complete recording
 
 ```bash
-cd ~/Downloads/track8
+cd /path/to/hack-0aa7de99-cactus
 export ASR_MODEL="$PWD/models/whisper"
 export DIARIZATION_MODEL="$PWD/models/diarization"
 export OLLAMA_MODEL=qwen2.5:7b
